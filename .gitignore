@@ -1,0 +1,25 @@
+# Environments
+.env
+venv/
+env/
+.venv/
+
+# GCP Credentials
+gcp-key.json
+*-key.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# State
+state.json
+agent/incident_reports/*.json
+
+# Logs
+*.log
+
+# Mac
+.DS_Store

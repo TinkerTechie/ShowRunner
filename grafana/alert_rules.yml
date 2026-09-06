@@ -1,0 +1,104 @@
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: Broadcast
+    folder: Broadcast
+    interval: 10s
+    rules:
+      - uid: encoder-down
+        title: EncoderDown
+        condition: C
+        for: 10s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Encoder is down"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 60
+              to: 0
+            datasourceUid: prometheus_uid
+            model:
+              expr: broadcast_encoder_up
+              instant: true
+              refId: A
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expr: ""
+              refId: C
+              conditions:
+                - evaluator:
+                    type: lt
+                    params: [1]
+                  operator:
+                    type: and
+                  query:
+                    params: ["A"]
+
+      - uid: high-frame-drop-rate
+        title: HighFrameDropRate
+        condition: C
+        for: 10s
+        labels:
+          severity: warning
+        annotations:
+          summary: "High frame drop rate detected"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 60
+              to: 0
+            datasourceUid: prometheus_uid
+            model:
+              expr: broadcast_frame_drop_rate
+              instant: true
+              refId: A
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expr: ""
+              refId: C
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.05]
+                  operator:
+                    type: and
+                  query:
+                    params: ["A"]
+
+      - uid: cdn-region-down
+        title: CDNRegionDown
+        condition: C
+        for: 10s
+        labels:
+          severity: critical
+        annotations:
+          summary: "CDN Region {{ $labels.region }} is down"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 60
+              to: 0
+            datasourceUid: prometheus_uid
+            model:
+              expr: broadcast_cdn_region_up
+              instant: true
+              refId: A
+          - refId: B
+            datasourceUid: "__expr__"
+            model:
+              type: reduce
+              refId: B
+              expression: A
+              reducer: last
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              type: math
+              refId: C
+              expression: $B < 1

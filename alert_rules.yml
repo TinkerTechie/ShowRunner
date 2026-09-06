@@ -1,0 +1,35 @@
+groups:
+  - name: broadcast_alerts
+    rules:
+      - alert: EncoderDown
+        expr: broadcast_encoder_up == 0
+        for: 5s
+        labels:
+          severity: critical
+          component: encoder
+        annotations:
+          summary: "Broadcast encoder is down"
+          description: "The broadcast encoder has reported a down state for more than 5 seconds."
+
+      - alert: HighFrameDropRate
+        expr: broadcast_frame_drop_rate > 0.05
+        for: 5s
+        labels:
+          severity: warning
+          component: encoder
+        annotations:
+          summary: "High frame drop rate detected"
+          description: "The broadcast encoder frame drop rate is at {{ $value }}, exceeding the 5% threshold."
+
+      - alert: CDNRegionDown
+        # Note: While `min(broadcast_cdn_region_up) == 0` would trigger if ANY region goes down 
+        # (aggregating away the labels), doing `broadcast_cdn_region_up == 0` instead evaluates per-region.
+        # This is usually preferred because it allows us to use `{{ $labels.region }}` in the description!
+        expr: broadcast_cdn_region_up == 0
+        for: 5s
+        labels:
+          severity: critical
+          component: cdn
+        annotations:
+          summary: "CDN Region {{ $labels.region }} is down"
+          description: "The CDN region {{ $labels.region }} has reported a down state for more than 5 seconds."

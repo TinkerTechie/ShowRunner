@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 5s
+
+rule_files:
+  - 'alert_rules.yml'
+
+scrape_configs:
+  - job_name: 'broadcast_pipeline'
+    static_configs:
+      - targets: ['mock_pipeline:9200']

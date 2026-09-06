@@ -1,0 +1,49 @@
+services:
+  mock_pipeline:
+    build:
+      context: .
+      dockerfile: pipeline/Dockerfile
+    ports:
+      - "9200:9200"
+    volumes:
+      # We bind-mount the specific state.json file instead of the whole directory.
+      # This solves the sharing problem: both the host (chaos_injector) and 
+      # the container (mock_pipeline) are reading/writing the exact same inode.
+      - ./state.json:/app/state.json
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--web.enable-lifecycle"
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./grafana/alert_rules.yml:/etc/grafana/provisioning/alerting/alert_rules.yml:ro
+      - ./grafana/contactpoints.yml:/etc/grafana/provisioning/alerting/contactpoints.yml:ro
+
+  agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    volumes:
+      - ./state.json:/app/state.json
+      - ./agent/incident_reports:/app/agent/incident_reports
+    depends_on:
+      - grafana
+      - mock_pipeline
