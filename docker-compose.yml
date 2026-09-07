@@ -1,8 +1,8 @@
 services:
   mock_pipeline:
     build:
-      context: .
-      dockerfile: pipeline/Dockerfile
+      context: ./pipeline
+      dockerfile: Dockerfile
     ports:
       - "9200:9200"
     volumes:
@@ -16,8 +16,8 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--web.enable-lifecycle"
