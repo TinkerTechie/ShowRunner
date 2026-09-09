@@ -2,7 +2,7 @@ import os
 import json
 import glob
 import logging
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from grafana_client import get_recent_metrics_snapshot
@@ -68,7 +68,7 @@ def get_incident(incident_id: str):
     for inc in incidents:
         if inc.get("incident_id") == incident_id:
             return inc
-    return {"error": f"Incident {incident_id} not found"}
+    raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
 
 def _load_all_incidents() -> list:
     """Loads all incident report JSON files, sorted newest first."""
