@@ -44,8 +44,8 @@ services:
 
   agent:
     build:
-      context: ./agent
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: agent/Dockerfile
     ports:
       - "8080:8080"
     env_file:

@@ -23,20 +23,19 @@ groups:
               expr: broadcast_encoder_up
               instant: true
               refId: A
+          - refId: B
+            datasourceUid: "__expr__"
+            model:
+              type: reduce
+              refId: B
+              expression: A
+              reducer: last
           - refId: C
             datasourceUid: "__expr__"
             model:
-              type: threshold
-              expr: ""
+              type: math
               refId: C
-              conditions:
-                - evaluator:
-                    type: lt
-                    params: [1]
-                  operator:
-                    type: and
-                  query:
-                    params: ["A"]
+              expression: $B < 1
 
       - uid: high-frame-drop-rate
         title: HighFrameDropRate
@@ -56,20 +55,19 @@ groups:
               expr: broadcast_frame_drop_rate
               instant: true
               refId: A
+          - refId: B
+            datasourceUid: "__expr__"
+            model:
+              type: reduce
+              refId: B
+              expression: A
+              reducer: last
           - refId: C
             datasourceUid: "__expr__"
             model:
-              type: threshold
-              expr: ""
+              type: math
               refId: C
-              conditions:
-                - evaluator:
-                    type: gt
-                    params: [0.05]
-                  operator:
-                    type: and
-                  query:
-                    params: ["A"]
+              expression: $B > 0.05
 
       - uid: cdn-region-down
         title: CDNRegionDown
