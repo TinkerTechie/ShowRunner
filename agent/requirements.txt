@@ -4,3 +4,4 @@ requests
 google-cloud-aiplatform==1.70.0
 httpx
 pytest
+mcp>=2.2.0

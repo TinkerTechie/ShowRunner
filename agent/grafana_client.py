@@ -3,11 +3,46 @@ import requests
 import urllib.parse
 from typing import Union, List, Dict
 
+import asyncio
+
 GRAFANA_URL = os.environ.get("GRAFANA_URL", "http://localhost:3000")
 GRAFANA_API_KEY = os.environ.get("GRAFANA_API_KEY", "")
+MCP_GRAFANA_URL = os.environ.get("MCP_GRAFANA_URL", "")
 DATASOURCE_UID = "prometheus_uid"
 
-def query_instant(promql: str) -> Union[List, Dict]:
+async def _mcp_query_instant(promql: str) -> Union[List, Dict]:
+    from mcp.client.sse import sse_client
+    from mcp.client.session import ClientSession
+    try:
+        mcp_token = os.environ.get("MCP_GRAFANA_SERVER_TOKEN", "")
+        headers = {"Host": "localhost:8000"}
+        if mcp_token:
+            headers["Authorization"] = f"Bearer {mcp_token}"
+            
+        async with sse_client(MCP_GRAFANA_URL, headers=headers) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool("query_prometheus", {
+                    "datasourceUid": DATASOURCE_UID,
+                    "expr": promql,
+                    "queryType": "instant",
+                    "endTime": "now"
+                })
+                
+                import json
+                text_content = result.content[0].text
+                data = json.loads(text_content)
+                
+                if "data" in data:
+                    return data["data"]
+                elif data.get("status") == "success":
+                    return data.get("data", {}).get("result", [])
+                else:
+                    return {"error": f"MCP Query failed: {text_content}"}
+    except Exception as e:
+        return {"error": f"MCP Request failed: {str(e)}"}
+
+def _rest_query_instant(promql: str) -> Union[List, Dict]:
     """Hits the Grafana proxy endpoint for a Prometheus instant query."""
     encoded_query = urllib.parse.quote(promql)
     url = f"{GRAFANA_URL}/api/datasources/proxy/uid/{DATASOURCE_UID}/api/v1/query?query={encoded_query}"
@@ -31,6 +66,28 @@ def query_instant(promql: str) -> Union[List, Dict]:
         return {"error": f"Request failed: {str(e)}"}
     except ValueError:
         return {"error": "Failed to decode JSON response"}
+def query_instant(promql: str) -> Union[List, Dict]:
+    """Primary entrypoint for querying prometheus. Uses MCP if configured, otherwise falls back to REST."""
+    if MCP_GRAFANA_URL:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+            
+        if loop and loop.is_running():
+            import threading
+            result = None
+            def _run():
+                nonlocal result
+                result = asyncio.run(_mcp_query_instant(promql))
+            t = threading.Thread(target=_run)
+            t.start()
+            t.join()
+            return result
+        else:
+            return asyncio.run(_mcp_query_instant(promql))
+    else:
+        return _rest_query_instant(promql)
 
 def get_recent_metrics_snapshot() -> dict:
     """Fetches a snapshot of all relevant broadcast metrics."""

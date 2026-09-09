@@ -33,6 +33,15 @@ services:
       - ./grafana/alert_rules.yml:/etc/grafana/provisioning/alerting/alert_rules.yml:ro
       - ./grafana/contactpoints.yml:/etc/grafana/provisioning/alerting/contactpoints.yml:ro
 
+  mcp_grafana:
+    image: grafana/mcp-grafana:latest
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - grafana
+
   agent:
     build:
       context: ./agent
@@ -49,3 +58,4 @@ services:
     depends_on:
       - grafana
       - mock_pipeline
+      - mcp_grafana
