@@ -1,6 +1,9 @@
 import json
 import os
+import logging
 from typing import Dict, Any
+
+logger = logging.getLogger(__name__)
 
 # Resolve the state file relative to the project root
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -49,10 +52,42 @@ def reduce_bitrate(new_kbps: int) -> dict:
     save_state(state)
     return {"status": "success", "message": f"Bitrate reduced to {new_kbps} kbps and frame drops cleared."}
 
+def scale_cdn_capacity(region: str, multiplier: float = 2.0) -> dict:
+    """Scales up CDN edge capacity for a region experiencing high latency.
+    This simulates provisioning additional edge servers, which reduces latency."""
+    if region not in VALID_REGIONS:
+        return {"status": "error", "message": f"Invalid region '{region}'"}
+    if multiplier < 1.0 or multiplier > 10.0:
+        return {"status": "error", "message": f"Multiplier must be between 1.0 and 10.0, got {multiplier}"}
+    
+    state = load_state()
+    state.setdefault("regions", {}).setdefault(region, {})
+    current_latency = state["regions"][region].get("latency_ms", NORMAL_LATENCIES.get(region, 50))
+    # Scaling capacity reduces latency proportionally
+    new_latency = max(int(current_latency / multiplier), NORMAL_LATENCIES.get(region, 20))
+    state["regions"][region]["latency_ms"] = new_latency
+    state["regions"][region]["up"] = True  # Ensure region is marked up
+    save_state(state)
+    return {
+        "status": "success", 
+        "message": f"CDN capacity for {region} scaled by {multiplier}x. Latency reduced from {current_latency}ms to {new_latency}ms."
+    }
+
+def escalate_to_human(reason: str) -> dict:
+    """Escalates the incident to a human on-call engineer when the agent
+    cannot confidently diagnose the issue or no automated fix is appropriate."""
+    logger.warning(f"🚨 ESCALATION TO HUMAN: {reason}")
+    return {
+        "status": "escalated",
+        "message": f"Escalated to on-call engineer. Reason: {reason}"
+    }
+
 TOOL_REGISTRY = {
     "restart_encoder": restart_encoder,
     "failover_region": failover_region,
-    "reduce_bitrate": reduce_bitrate
+    "reduce_bitrate": reduce_bitrate,
+    "scale_cdn_capacity": scale_cdn_capacity,
+    "escalate_to_human": escalate_to_human,
 }
 
 TOOL_SCHEMAS = [
@@ -67,7 +102,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "failover_region",
-        "description": "Restores a specific CDN region that has gone down by routing traffic to a healthy edge.",
+        "description": "Restores a specific CDN region that has gone down (up=0) by routing traffic to a healthy edge.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -81,16 +116,65 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "reduce_bitrate",
-        "description": "Reduces the broadcast encoder bitrate to mitigate frame drops caused by bandwidth congestion.",
+        "description": (
+            "Reduces the broadcast encoder bitrate to mitigate frame drops caused by bandwidth congestion. "
+            "Choose the new bitrate proportionally to the severity of the frame drop rate: "
+            "frame_drop_rate > 0.30 (severe) → 2000 kbps, "
+            "frame_drop_rate > 0.15 (moderate) → 3000 kbps, "
+            "frame_drop_rate > 0.05 (mild) → 4500 kbps. "
+            "Always reason about the actual drop rate before choosing a value."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
                 "new_kbps": {
                     "type": "integer",
-                    "description": "The new target bitrate in kbps. Typical fallback values are 4000 or 3000."
+                    "description": "The new target bitrate in kbps. Must be chosen based on frame drop severity. See tool description for guidance."
                 }
             },
             "required": ["new_kbps"]
+        }
+    },
+    {
+        "name": "scale_cdn_capacity",
+        "description": (
+            "Scales up CDN edge capacity for a specific region experiencing high latency (but still up). "
+            "Use this when a region's latency_ms is elevated above normal thresholds but the region has not fully gone down. "
+            "For a fully down region (up=0), use failover_region instead."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "region": {
+                    "type": "string",
+                    "description": "The CDN region to scale (e.g., 'us-east', 'us-west', 'eu-west', 'ap-south')."
+                },
+                "multiplier": {
+                    "type": "number",
+                    "description": "The capacity multiplier (1.0-10.0). Higher values provision more edge servers and reduce latency more aggressively. Typical: 2.0 for moderate, 4.0 for severe latency spikes."
+                }
+            },
+            "required": ["region", "multiplier"]
+        }
+    },
+    {
+        "name": "escalate_to_human",
+        "description": (
+            "Escalates the incident to a human on-call engineer. Use this when: "
+            "(1) the alert type is unrecognized or ambiguous, "
+            "(2) you are not confident in your diagnosis, or "
+            "(3) no automated remediation tool is appropriate for the situation. "
+            "Always provide a clear reason explaining why automated remediation was insufficient."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "description": "A clear explanation of why this incident requires human intervention."
+                }
+            },
+            "required": ["reason"]
         }
     }
 ]

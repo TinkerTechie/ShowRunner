@@ -2,3 +2,5 @@ fastapi
 uvicorn
 requests
 google-cloud-aiplatform==1.70.0
+httpx
+pytest

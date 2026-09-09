@@ -83,13 +83,28 @@ def main():
         state["regions"][region]["latency_ms"] = normal_latencies.get(region, 50)
         mutated = True
         
+    elif command == "cdn-lag":
+        if len(sys.argv) < 3:
+            print("Error: Missing region. Usage: cdn-lag <region> [latency_ms]")
+            sys.exit(1)
+        region = sys.argv[2]
+        if region not in VALID_REGIONS:
+            print(f"Error: Invalid region '{region}'. Valid regions are: {', '.join(VALID_REGIONS)}")
+            sys.exit(1)
+        latency = int(sys.argv[3]) if len(sys.argv) > 3 else 450
+        state.setdefault("regions", {}).setdefault(region, {})
+        state["regions"][region]["up"] = True
+        state["regions"][region]["latency_ms"] = latency
+        mutated = True
+
     elif command == "frame-drops":
         if len(sys.argv) < 3 or sys.argv[2] not in ["on", "off"]:
-            print("Error: Usage: frame-drops on|off")
+            print("Error: Usage: frame-drops on|off [rate 0.0-1.0]")
             sys.exit(1)
             
         if sys.argv[2] == "on":
-            state["frame_drop_rate"] = 0.2
+            rate = float(sys.argv[3]) if len(sys.argv) > 3 else 0.2
+            state["frame_drop_rate"] = rate
         else:
             state["frame_drop_rate"] = 0.0
         mutated = True

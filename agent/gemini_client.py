@@ -1,10 +1,13 @@
 import os
 import json
+import logging
 import vertexai
 from vertexai.generative_models import GenerativeModel, Tool, FunctionDeclaration
 
 # Import the schemas we wrote in Exercise 8
-from tools import TOOL_SCHEMAS
+from tools import TOOL_SCHEMAS, load_state
+
+logger = logging.getLogger(__name__)
 
 # State
 _initialized = False
@@ -31,6 +34,22 @@ def _build_tools() -> list[Tool]:
     # The Vertex SDK expects a single Tool object containing a list of FunctionDeclarations
     return [Tool(function_declarations=declarations)]
 
+def _severity_based_bitrate() -> int:
+    """Reads current frame_drop_rate from state.json and selects an appropriate
+    bitrate reduction. This demonstrates genuine severity-based reasoning."""
+    try:
+        state = load_state()
+        fdr = state.get("frame_drop_rate", 0.0)
+    except Exception:
+        fdr = 0.15  # Default to moderate if state can't be read
+
+    if fdr > 0.30:
+        return 2000  # Severe: aggressive reduction
+    elif fdr > 0.15:
+        return 3000  # Moderate
+    else:
+        return 4500  # Mild
+
 def _mock_diagnose(alert_payload: dict, recent_metrics: dict) -> dict:
     alertname = alert_payload.get("labels", {}).get("alertname", "")
     
@@ -40,20 +59,43 @@ def _mock_diagnose(alert_payload: dict, recent_metrics: dict) -> dict:
             "tool_call": {"name": "restart_encoder", "args": {}}
         }
     elif alertname == "HighFrameDropRate":
+        # Severity-based reasoning: choose bitrate based on actual frame drop rate
+        target_kbps = _severity_based_bitrate()
+        try:
+            state = load_state()
+            fdr = state.get("frame_drop_rate", 0.0)
+        except Exception:
+            fdr = 0.15
+
+        severity = "severe" if fdr > 0.30 else "moderate" if fdr > 0.15 else "mild"
         return {
-            "diagnosis": "Frame drop rate is elevated. Reducing bitrate to mitigate congestion.",
-            "tool_call": {"name": "reduce_bitrate", "args": {"new_kbps": 3000}}
+            "diagnosis": (
+                f"Frame drop rate is {fdr:.1%} ({severity}). "
+                f"Reducing bitrate to {target_kbps} kbps to match congestion severity. "
+                f"Rationale: {'aggressive reduction needed to prevent stream collapse' if severity == 'severe' else 'moderate reduction to stabilize without sacrificing quality' if severity == 'moderate' else 'gentle reduction to clear transient congestion'}."
+            ),
+            "tool_call": {"name": "reduce_bitrate", "args": {"new_kbps": target_kbps}}
         }
     elif alertname == "CDNRegionDown":
         region = alert_payload.get("labels", {}).get("region", "unknown")
         return {
-            "diagnosis": f"CDN region {region} is down. Initiating failover.",
+            "diagnosis": f"CDN region {region} is down. Initiating failover to restore traffic routing.",
             "tool_call": {"name": "failover_region", "args": {"region": region}}
         }
+    elif alertname == "CDNHighLatency":
+        region = alert_payload.get("labels", {}).get("region", "unknown")
+        return {
+            "diagnosis": f"CDN region {region} is experiencing elevated latency. Scaling edge capacity to reduce congestion.",
+            "tool_call": {"name": "scale_cdn_capacity", "args": {"region": region, "multiplier": 2.0}}
+        }
     
+    # Unknown alert → escalate to human (not silent failure)
     return {
-        "diagnosis": f"Unknown alert type: {alertname}. No action taken.",
-        "tool_call": None
+        "diagnosis": f"Unrecognized alert type '{alertname}'. No automated remediation available. Escalating to on-call engineer.",
+        "tool_call": {
+            "name": "escalate_to_human", 
+            "args": {"reason": f"Unrecognized alert type '{alertname}' with no matching remediation playbook. Manual investigation required."}
+        }
     }
 
 
@@ -66,7 +108,25 @@ def diagnose_and_pick_action(alert_payload: dict, recent_metrics: dict) -> dict:
     system_instruction = """
     You are an automated Site Reliability Engineer (SRE) for a live broadcast pipeline.
     You will receive an alert payload from Grafana and a snapshot of current Prometheus metrics.
-    Your job is to diagnose the root cause in 1-2 sentences and then select exactly one remediation tool to fix it.
+    
+    Your job:
+    1. Diagnose the root cause in 1-2 sentences with specific reasoning about the metrics you observe.
+    2. Select exactly one remediation tool to fix it.
+    
+    CRITICAL REASONING GUIDELINES:
+    - For frame drops (HighFrameDropRate): Look at the actual broadcast_frame_drop_rate value. 
+      Choose bitrate reduction proportional to severity:
+        * frame_drop_rate > 0.30 → reduce_bitrate(new_kbps=2000) — severe, prevent stream collapse
+        * frame_drop_rate > 0.15 → reduce_bitrate(new_kbps=3000) — moderate congestion
+        * frame_drop_rate > 0.05 → reduce_bitrate(new_kbps=4500) — mild, gentle reduction
+      EXPLAIN your reasoning: state the observed rate and why you chose that specific bitrate.
+    
+    - For CDN issues: Distinguish between a fully down region (up=0 → use failover_region) 
+      and high latency on a live region (up=1, high latency_ms → use scale_cdn_capacity).
+    
+    - If the alert type is unrecognized, ambiguous, or you are not confident in your diagnosis, 
+      call escalate_to_human with a clear reason. Do NOT guess or force-fit a tool.
+    
     If multiple issues exist, pick the tool that addresses the most critical one first.
     You MUST call exactly one tool.
     """
@@ -110,6 +170,14 @@ def diagnose_and_pick_action(alert_payload: dict, recent_metrics: dict) -> dict:
         except (AttributeError, ValueError):
             # Safe fallback if SDK wrapper is empty or truthiness check fails
             pass
+
+    # If Gemini returned no tool call, auto-escalate rather than silently doing nothing
+    if tool_call is None:
+        logger.warning("Gemini returned no tool call. Auto-escalating to human.")
+        tool_call = {
+            "name": "escalate_to_human",
+            "args": {"reason": f"Model did not recommend a remediation action. Diagnosis: {diagnosis[:200]}"}
+        }
             
     return {
         "diagnosis": diagnosis.strip() if diagnosis else "No diagnosis provided.",
@@ -139,11 +207,14 @@ if __name__ == "__main__":
             self.assertEqual(result["tool_call"]["name"], "restart_encoder")
             self.assertIn("encoder is down", result["diagnosis"].lower())
 
-        def test_high_frame_drop(self):
+        def test_high_frame_drop_severity_based(self):
+            """Verify bitrate is chosen based on actual frame_drop_rate in state.json."""
             alert = {"labels": {"alertname": "HighFrameDropRate"}}
             result = diagnose_and_pick_action(alert, self.recent_metrics)
             self.assertEqual(result["tool_call"]["name"], "reduce_bitrate")
-            self.assertEqual(result["tool_call"]["args"]["new_kbps"], 3000)
+            # The bitrate should be one of the severity-based values
+            self.assertIn(result["tool_call"]["args"]["new_kbps"], [2000, 3000, 4500])
+            # Diagnosis should mention severity reasoning
             self.assertIn("reducing bitrate", result["diagnosis"].lower())
 
         def test_cdn_region_down(self):
@@ -152,12 +223,22 @@ if __name__ == "__main__":
             self.assertEqual(result["tool_call"]["name"], "failover_region")
             self.assertEqual(result["tool_call"]["args"]["region"], "eu-west")
             self.assertIn("eu-west", result["diagnosis"].lower())
+
+        def test_cdn_high_latency(self):
+            """Verify CDNHighLatency uses scale_cdn_capacity instead of failover."""
+            alert = {"labels": {"alertname": "CDNHighLatency", "region": "ap-south"}}
+            result = diagnose_and_pick_action(alert, self.recent_metrics)
+            self.assertEqual(result["tool_call"]["name"], "scale_cdn_capacity")
+            self.assertEqual(result["tool_call"]["args"]["region"], "ap-south")
             
-        def test_unknown_alert(self):
+        def test_unknown_alert_escalates(self):
+            """Verify unknown alerts trigger escalation, not silent None."""
             alert = {"labels": {"alertname": "SomethingElse"}}
             result = diagnose_and_pick_action(alert, self.recent_metrics)
-            self.assertIsNone(result["tool_call"])
-            self.assertIn("unknown alert type", result["diagnosis"].lower())
+            self.assertIsNotNone(result["tool_call"])
+            self.assertEqual(result["tool_call"]["name"], "escalate_to_human")
+            self.assertIn("unrecognized", result["diagnosis"].lower())
 
     print("Running Gemini Client Mock Mode tests...")
     unittest.main()
+

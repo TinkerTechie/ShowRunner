@@ -44,6 +44,8 @@ services:
     volumes:
       - ./state.json:/app/state.json
       - ./agent/incident_reports:/app/agent/incident_reports
+      - ./dashboard:/app/dashboard
+      - ./agent:/app/agent
     depends_on:
       - grafana
       - mock_pipeline

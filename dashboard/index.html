@@ -1,0 +1,1303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ShowRunner — Live Broadcast Control</title>
+    <meta name="description" content="Self-healing live broadcast pipeline agent. Real-time monitoring and autonomous remediation.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        /* ================================================================
+           DESIGN SYSTEM — Dark Broadcast Control Room
+           ================================================================ */
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-secondary: #111827;
+            --bg-card: rgba(17, 24, 39, 0.7);
+            --bg-glass: rgba(17, 24, 39, 0.5);
+            --border-subtle: rgba(255, 255, 255, 0.06);
+            --border-glow: rgba(255, 255, 255, 0.1);
+
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+
+            --green: #22c55e;
+            --green-glow: rgba(34, 197, 94, 0.25);
+            --green-bg: rgba(34, 197, 94, 0.08);
+            --amber: #f59e0b;
+            --amber-glow: rgba(245, 158, 11, 0.25);
+            --amber-bg: rgba(245, 158, 11, 0.08);
+            --red: #ef4444;
+            --red-glow: rgba(239, 68, 68, 0.3);
+            --red-bg: rgba(239, 68, 68, 0.08);
+            --blue: #3b82f6;
+            --blue-glow: rgba(59, 130, 246, 0.2);
+            --purple: #a855f7;
+            --purple-glow: rgba(168, 85, 247, 0.2);
+            --cyan: #06b6d4;
+
+            --radius: 16px;
+            --radius-sm: 10px;
+            --radius-xs: 6px;
+            --shadow-card: 0 4px 30px rgba(0, 0, 0, 0.4);
+            --shadow-glow-green: 0 0 40px rgba(34, 197, 94, 0.15);
+            --shadow-glow-red: 0 0 40px rgba(239, 68, 68, 0.2);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Ambient background glow */
+        body::before {
+            content: '';
+            position: fixed;
+            top: -200px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 800px;
+            height: 600px;
+            background: radial-gradient(ellipse, rgba(59, 130, 246, 0.06) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* ================================================================
+           LAYOUT
+           ================================================================ */
+        .app {
+            position: relative;
+            z-index: 1;
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 24px 32px 48px;
+        }
+
+        /* ================================================================
+           HEADER
+           ================================================================ */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 32px;
+            padding-bottom: 24px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .logo {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: 800;
+            color: white;
+            box-shadow: 0 4px 20px rgba(59, 130, 246, 0.3);
+        }
+
+        .header-title h1 {
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, #f1f5f9, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header-title span {
+            font-size: 12px;
+            color: var(--text-muted);
+            font-weight: 500;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .live-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            background: var(--red-bg);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--red);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--red);
+            animation: pulse-dot 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
+        }
+
+        .clock {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        /* ================================================================
+           HEALTH BANNER
+           ================================================================ */
+        .health-banner {
+            position: relative;
+            padding: 28px 32px;
+            border-radius: var(--radius);
+            margin-bottom: 28px;
+            border: 1px solid var(--border-subtle);
+            overflow: hidden;
+            transition: all 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .health-banner.healthy {
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.06), rgba(34, 197, 94, 0.02));
+            border-color: rgba(34, 197, 94, 0.15);
+            box-shadow: var(--shadow-glow-green);
+        }
+
+        .health-banner.degraded {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.06), rgba(245, 158, 11, 0.02));
+            border-color: rgba(245, 158, 11, 0.15);
+        }
+
+        .health-banner.critical {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.08), rgba(239, 68, 68, 0.02));
+            border-color: rgba(239, 68, 68, 0.2);
+            box-shadow: var(--shadow-glow-red);
+        }
+
+        /* Animated scanline overlay */
+        .health-banner::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.02), transparent);
+            animation: scanline 4s ease-in-out infinite;
+            pointer-events: none;
+        }
+
+        @keyframes scanline {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+
+        .health-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .health-left {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .health-indicator {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 26px;
+            position: relative;
+        }
+
+        .health-indicator.healthy {
+            background: var(--green-bg);
+            box-shadow: 0 0 0 0 var(--green-glow);
+            animation: pulse-ring-green 2.5s ease-out infinite;
+        }
+
+        .health-indicator.degraded {
+            background: var(--amber-bg);
+            box-shadow: 0 0 0 0 var(--amber-glow);
+            animation: pulse-ring-amber 2s ease-out infinite;
+        }
+
+        .health-indicator.critical {
+            background: var(--red-bg);
+            box-shadow: 0 0 0 0 var(--red-glow);
+            animation: pulse-ring-red 1.2s ease-out infinite;
+        }
+
+        @keyframes pulse-ring-green {
+            0% { box-shadow: 0 0 0 0 var(--green-glow); }
+            70% { box-shadow: 0 0 0 14px transparent; }
+            100% { box-shadow: 0 0 0 0 transparent; }
+        }
+        @keyframes pulse-ring-amber {
+            0% { box-shadow: 0 0 0 0 var(--amber-glow); }
+            70% { box-shadow: 0 0 0 14px transparent; }
+            100% { box-shadow: 0 0 0 0 transparent; }
+        }
+        @keyframes pulse-ring-red {
+            0% { box-shadow: 0 0 0 0 var(--red-glow); }
+            70% { box-shadow: 0 0 0 16px transparent; }
+            100% { box-shadow: 0 0 0 0 transparent; }
+        }
+
+        .health-text h2 {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .health-text p {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .health-stats {
+            display: flex;
+            gap: 40px;
+        }
+
+        .health-stat {
+            text-align: right;
+        }
+
+        .health-stat-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 28px;
+            font-weight: 700;
+            line-height: 1;
+            margin-bottom: 4px;
+        }
+
+        .health-stat-value.green { color: var(--green); }
+        .health-stat-value.blue { color: var(--blue); }
+        .health-stat-value.purple { color: var(--purple); }
+
+        .health-stat-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            font-weight: 600;
+        }
+
+        /* ================================================================
+           GRID
+           ================================================================ */
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-bottom: 28px;
+        }
+
+        .grid-full {
+            grid-column: 1 / -1;
+        }
+
+        /* ================================================================
+           CARDS
+           ================================================================ */
+        .card {
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius);
+            padding: 24px;
+            box-shadow: var(--shadow-card);
+            transition: border-color 0.3s ease;
+        }
+
+        .card:hover {
+            border-color: var(--border-glow);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        .card-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+
+        .card-title-icon {
+            font-size: 16px;
+        }
+
+        .card-badge {
+            font-size: 11px;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .badge-green {
+            background: var(--green-bg);
+            color: var(--green);
+            border: 1px solid rgba(34, 197, 94, 0.2);
+        }
+
+        .badge-red {
+            background: var(--red-bg);
+            color: var(--red);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .badge-amber {
+            background: var(--amber-bg);
+            color: var(--amber);
+            border: 1px solid rgba(245, 158, 11, 0.2);
+        }
+
+        .badge-blue {
+            background: rgba(59, 130, 246, 0.08);
+            color: var(--blue);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+        }
+
+        .badge-purple {
+            background: rgba(168, 85, 247, 0.08);
+            color: var(--purple);
+            border: 1px solid rgba(168, 85, 247, 0.2);
+        }
+
+        /* ================================================================
+           SYSTEM GAUGES
+           ================================================================ */
+        .gauges {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+        }
+
+        .gauge {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            padding: 20px;
+            text-align: center;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .gauge:hover {
+            background: rgba(255, 255, 255, 0.04);
+            transform: translateY(-2px);
+        }
+
+        .gauge-icon {
+            font-size: 24px;
+            margin-bottom: 12px;
+        }
+
+        .gauge-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            transition: color 0.3s ease;
+        }
+
+        .gauge-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            font-weight: 600;
+        }
+
+        .gauge-bar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            height: 3px;
+            border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+            transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1), background 0.3s ease;
+        }
+
+        /* ================================================================
+           CDN REGIONS
+           ================================================================ */
+        .cdn-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .cdn-region {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 18px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            transition: all 0.3s ease;
+        }
+
+        .cdn-region:hover {
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .cdn-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .cdn-status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            transition: all 0.3s ease;
+        }
+
+        .cdn-status-dot.up {
+            background: var(--green);
+            box-shadow: 0 0 8px var(--green-glow);
+        }
+
+        .cdn-status-dot.down {
+            background: var(--red);
+            box-shadow: 0 0 8px var(--red-glow);
+            animation: pulse-dot 1s ease-in-out infinite;
+        }
+
+        .cdn-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .cdn-latency {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .cdn-latency.normal { color: var(--green); }
+        .cdn-latency.warning { color: var(--amber); }
+        .cdn-latency.critical { color: var(--red); }
+
+        /* ================================================================
+           INCIDENT FEED
+           ================================================================ */
+        .incident-feed {
+            max-height: 500px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255,255,255,0.1) transparent;
+        }
+
+        .incident-feed::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .incident-feed::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .incident-feed::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.1);
+            border-radius: 3px;
+        }
+
+        .incident-item {
+            display: flex;
+            gap: 16px;
+            padding: 16px;
+            border-radius: var(--radius-sm);
+            margin-bottom: 8px;
+            background: rgba(255, 255, 255, 0.015);
+            border: 1px solid transparent;
+            transition: all 0.3s ease;
+            cursor: default;
+            animation: slide-in 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .incident-item:hover {
+            background: rgba(255, 255, 255, 0.04);
+            border-color: var(--border-subtle);
+        }
+
+        @keyframes slide-in {
+            from { opacity: 0; transform: translateY(-8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .incident-icon {
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+
+        .incident-icon.resolved {
+            background: var(--green-bg);
+        }
+
+        .incident-icon.escalated {
+            background: var(--amber-bg);
+        }
+
+        .incident-icon.error {
+            background: var(--red-bg);
+        }
+
+        .incident-body {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .incident-header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+
+        .incident-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .incident-time {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .incident-diagnosis {
+            font-size: 12px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+            margin-bottom: 6px;
+        }
+
+        .incident-action {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            padding: 3px 10px;
+            border-radius: var(--radius-xs);
+            background: rgba(59, 130, 246, 0.08);
+            color: var(--blue);
+            border: 1px solid rgba(59, 130, 246, 0.15);
+        }
+
+        .incident-empty {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+
+        .incident-empty-icon {
+            font-size: 40px;
+            margin-bottom: 12px;
+            opacity: 0.5;
+        }
+
+        .incident-empty p {
+            font-size: 13px;
+        }
+
+        /* ================================================================
+           AGENT LOG (Compact timeline)
+           ================================================================ */
+        .agent-status {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 16px 20px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+        }
+
+        .agent-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            box-shadow: 0 4px 16px rgba(139, 92, 246, 0.3);
+        }
+
+        .agent-info {
+            flex: 1;
+        }
+
+        .agent-name {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+
+        .agent-desc {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .agent-mode {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            padding: 4px 12px;
+            border-radius: 12px;
+        }
+
+        /* ================================================================
+           FOOTER
+           ================================================================ */
+        .footer {
+            text-align: center;
+            padding-top: 32px;
+            border-top: 1px solid var(--border-subtle);
+            margin-top: 12px;
+        }
+
+        .footer p {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .footer a {
+            color: var(--blue);
+            text-decoration: none;
+        }
+
+        /* ================================================================
+           RESPONSIVE
+           ================================================================ */
+        @media (max-width: 1024px) {
+            .grid { grid-template-columns: 1fr; }
+            .gauges { grid-template-columns: repeat(2, 1fr); }
+            .health-content { flex-direction: column; align-items: flex-start; gap: 20px; }
+            .health-stats { align-self: stretch; justify-content: space-between; }
+            .health-stat { text-align: left; }
+        }
+
+        @media (max-width: 640px) {
+            .app { padding: 16px; }
+            .header { flex-direction: column; align-items: flex-start; gap: 12px; }
+            .gauges { grid-template-columns: 1fr; }
+            .cdn-grid { grid-template-columns: 1fr; }
+        }
+
+        /* Connection status toast */
+        .connection-toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            padding: 10px 18px;
+            border-radius: var(--radius-sm);
+            font-size: 12px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            z-index: 1000;
+            transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+            transform: translateY(80px);
+            opacity: 0;
+        }
+
+        .connection-toast.visible {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        .connection-toast.error {
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: var(--red);
+        }
+
+        .connection-toast.ok {
+            background: rgba(34, 197, 94, 0.15);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            color: var(--green);
+        }
+
+        /* Skeleton loading */
+        .skeleton {
+            background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            border-radius: var(--radius-xs);
+        }
+
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="app">
+
+    <!-- ============================================================
+         HEADER
+         ============================================================ -->
+    <header class="header">
+        <div class="header-left">
+            <div class="logo">S</div>
+            <div class="header-title">
+                <h1>ShowRunner</h1>
+                <span>Self-Healing Broadcast Pipeline</span>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="live-badge">
+                <span class="live-dot"></span>
+                Live
+            </div>
+            <div class="clock" id="clock">--:--:--</div>
+        </div>
+    </header>
+
+    <!-- ============================================================
+         HEALTH BANNER
+         ============================================================ -->
+    <div class="health-banner healthy" id="healthBanner">
+        <div class="health-content">
+            <div class="health-left">
+                <div class="health-indicator healthy" id="healthIndicator">✓</div>
+                <div class="health-text">
+                    <h2 id="healthTitle">All Systems Operational</h2>
+                    <p id="healthSubtitle">Pipeline is healthy. Streaming at full capacity.</p>
+                </div>
+            </div>
+            <div class="health-stats">
+                <div class="health-stat">
+                    <div class="health-stat-value green" id="statResolved">0</div>
+                    <div class="health-stat-label">Auto-Resolved</div>
+                </div>
+                <div class="health-stat">
+                    <div class="health-stat-value blue" id="statAvgTime">—</div>
+                    <div class="health-stat-label">Avg Fix Time</div>
+                </div>
+                <div class="health-stat">
+                    <div class="health-stat-value purple" id="statEscalated">0</div>
+                    <div class="health-stat-label">Escalated</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================
+         SYSTEM GAUGES
+         ============================================================ -->
+    <div class="grid" style="margin-bottom: 24px;">
+        <div class="card grid-full">
+            <div class="card-header">
+                <div class="card-title">
+                    <span class="card-title-icon">📡</span>
+                    System Gauges
+                </div>
+                <span class="card-badge badge-green" id="systemBadge">NOMINAL</span>
+            </div>
+            <div class="gauges">
+                <div class="gauge" id="gaugeEncoder">
+                    <div class="gauge-icon">🎬</div>
+                    <div class="gauge-value" id="encoderValue" style="color: var(--green);">UP</div>
+                    <div class="gauge-label">Encoder</div>
+                    <div class="gauge-bar" style="width: 100%; background: var(--green);"></div>
+                </div>
+                <div class="gauge" id="gaugeFrameDrop">
+                    <div class="gauge-icon">📉</div>
+                    <div class="gauge-value" id="frameDropValue" style="color: var(--green);">0.0%</div>
+                    <div class="gauge-label">Frame Drop</div>
+                    <div class="gauge-bar" style="width: 0%; background: var(--green);"></div>
+                </div>
+                <div class="gauge" id="gaugeBitrate">
+                    <div class="gauge-icon">⚡</div>
+                    <div class="gauge-value" id="bitrateValue" style="color: var(--blue);">6000</div>
+                    <div class="gauge-label">Bitrate (kbps)</div>
+                    <div class="gauge-bar" style="width: 100%; background: var(--blue);"></div>
+                </div>
+                <div class="gauge" id="gaugeCDN">
+                    <div class="gauge-icon">🌐</div>
+                    <div class="gauge-value" id="cdnValue" style="color: var(--green);">4/4</div>
+                    <div class="gauge-label">CDN Regions</div>
+                    <div class="gauge-bar" style="width: 100%; background: var(--green);"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================
+         CDN REGIONS + AGENT STATUS
+         ============================================================ -->
+    <div class="grid">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">
+                    <span class="card-title-icon">🗺️</span>
+                    CDN Edge Regions
+                </div>
+            </div>
+            <div class="cdn-grid" id="cdnGrid">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">
+                    <span class="card-title-icon">🤖</span>
+                    Agent Status
+                </div>
+            </div>
+            <div class="agent-status">
+                <div class="agent-avatar">🧠</div>
+                <div class="agent-info">
+                    <div class="agent-name">Gemini SRE Agent</div>
+                    <div class="agent-desc" id="agentDesc">Monitoring pipeline for anomalies</div>
+                </div>
+                <span class="agent-mode badge-green card-badge" id="agentMode">WATCHING</span>
+            </div>
+            <div style="margin-top: 16px; padding: 16px 20px; background: rgba(255,255,255,0.02); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+                    <span style="font-size: 12px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Remediation Playbook</span>
+                    <span style="font-size: 12px; color: var(--text-secondary);" id="toolCount">5 tools</span>
+                </div>
+                <div style="display: flex; flex-wrap: wrap; gap: 6px;" id="toolsList">
+                    <span class="card-badge badge-blue">restart_encoder</span>
+                    <span class="card-badge badge-blue">reduce_bitrate</span>
+                    <span class="card-badge badge-blue">failover_region</span>
+                    <span class="card-badge badge-blue">scale_cdn_capacity</span>
+                    <span class="card-badge badge-purple">escalate_to_human</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================
+         INCIDENT FEED
+         ============================================================ -->
+    <div class="grid" style="margin-top: 24px;">
+        <div class="card grid-full">
+            <div class="card-header">
+                <div class="card-title">
+                    <span class="card-title-icon">📋</span>
+                    Incident Feed
+                </div>
+                <span class="card-badge badge-blue" id="incidentCount">0 incidents</span>
+            </div>
+            <div class="incident-feed" id="incidentFeed">
+                <div class="incident-empty">
+                    <div class="incident-empty-icon">🛡️</div>
+                    <p>No incidents recorded. Pipeline is clean.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================
+         FOOTER
+         ============================================================ -->
+    <footer class="footer">
+        <p>ShowRunner • Powered by Gemini AI • Built for the Google AI Hackathon 2025</p>
+    </footer>
+
+</div>
+
+<!-- Connection Status Toast -->
+<div class="connection-toast" id="connectionToast">
+    <span id="toastIcon">⚠️</span>
+    <span id="toastText">Connection lost</span>
+</div>
+
+<script>
+    // ================================================================
+    // STATE
+    // ================================================================
+    const API_BASE = window.location.origin;
+    let lastIncidentCount = 0;
+    let isConnected = true;
+    let pollInterval = null;
+
+    // Region display names
+    const REGION_DISPLAY = {
+        'us-east': '🇺🇸 US East',
+        'us-west': '🇺🇸 US West',
+        'eu-west': '🇪🇺 EU West',
+        'ap-south': '🇮🇳 AP South'
+    };
+
+    // ================================================================
+    // CLOCK
+    // ================================================================
+    function updateClock() {
+        const now = new Date();
+        document.getElementById('clock').textContent =
+            now.toLocaleTimeString('en-US', { hour12: false }) + ' UTC' +
+            (now.getTimezoneOffset() > 0 ? '-' : '+') +
+            String(Math.abs(Math.floor(now.getTimezoneOffset() / 60))).padStart(2, '0');
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // ================================================================
+    // CONNECTION TOAST
+    // ================================================================
+    function showToast(type, message) {
+        const toast = document.getElementById('connectionToast');
+        const icon = document.getElementById('toastIcon');
+        const text = document.getElementById('toastText');
+
+        toast.className = `connection-toast ${type} visible`;
+        icon.textContent = type === 'error' ? '⚠️' : '✓';
+        text.textContent = message;
+
+        setTimeout(() => {
+            toast.classList.remove('visible');
+        }, 3000);
+    }
+
+    // ================================================================
+    // COMPUTE OVERALL HEALTH
+    // ================================================================
+    function computeHealth(state) {
+        if (!state) return 'critical';
+        const issues = [];
+        if (!state.encoder_alive) issues.push('critical');
+        if (state.frame_drop_rate > 0.05) issues.push(state.frame_drop_rate > 0.2 ? 'critical' : 'degraded');
+
+        const regions = state.regions || {};
+        for (const [, r] of Object.entries(regions)) {
+            if (!r.up) issues.push('critical');
+            else if (r.latency_ms > 500) issues.push('degraded');
+        }
+
+        if (issues.includes('critical')) return 'critical';
+        if (issues.includes('degraded')) return 'degraded';
+        return 'healthy';
+    }
+
+    // ================================================================
+    // UPDATE HEALTH BANNER
+    // ================================================================
+    function updateHealthBanner(health, stats) {
+        const banner = document.getElementById('healthBanner');
+        const indicator = document.getElementById('healthIndicator');
+        const title = document.getElementById('healthTitle');
+        const subtitle = document.getElementById('healthSubtitle');
+
+        banner.className = `health-banner ${health}`;
+        indicator.className = `health-indicator ${health}`;
+
+        if (health === 'healthy') {
+            indicator.textContent = '✓';
+            title.textContent = 'All Systems Operational';
+            subtitle.textContent = 'Pipeline is healthy. Streaming at full capacity.';
+        } else if (health === 'degraded') {
+            indicator.textContent = '⚡';
+            title.textContent = 'Performance Degraded';
+            subtitle.textContent = 'Partial issues detected. Agent is investigating.';
+        } else {
+            indicator.textContent = '✕';
+            title.textContent = 'Critical Incident Active';
+            subtitle.textContent = 'Pipeline failure detected. Agent is remediating.';
+        }
+
+        // Stats
+        document.getElementById('statResolved').textContent = stats.resolved || 0;
+        document.getElementById('statAvgTime').textContent = stats.avg_time || '—';
+        document.getElementById('statEscalated').textContent = stats.escalated || 0;
+    }
+
+    // ================================================================
+    // UPDATE SYSTEM GAUGES
+    // ================================================================
+    function updateGauges(state) {
+        if (!state) return;
+
+        // Encoder
+        const encoderUp = state.encoder_alive;
+        const encoderVal = document.getElementById('encoderValue');
+        const encoderGauge = document.getElementById('gaugeEncoder');
+        encoderVal.textContent = encoderUp ? 'UP' : 'DOWN';
+        encoderVal.style.color = encoderUp ? 'var(--green)' : 'var(--red)';
+        encoderGauge.querySelector('.gauge-bar').style.width = encoderUp ? '100%' : '0%';
+        encoderGauge.querySelector('.gauge-bar').style.background = encoderUp ? 'var(--green)' : 'var(--red)';
+
+        // Frame Drop
+        const fdr = state.frame_drop_rate || 0;
+        const fdrPct = (fdr * 100).toFixed(1);
+        const fdrEl = document.getElementById('frameDropValue');
+        fdrEl.textContent = fdrPct + '%';
+        const fdrColor = fdr > 0.2 ? 'var(--red)' : fdr > 0.05 ? 'var(--amber)' : 'var(--green)';
+        fdrEl.style.color = fdrColor;
+        const fdrGauge = document.getElementById('gaugeFrameDrop');
+        fdrGauge.querySelector('.gauge-bar').style.width = Math.min(fdr * 500, 100) + '%';
+        fdrGauge.querySelector('.gauge-bar').style.background = fdrColor;
+
+        // Bitrate
+        const bitrate = state.encoder_bitrate_kbps || 0;
+        document.getElementById('bitrateValue').textContent = bitrate.toLocaleString();
+        const brColor = bitrate >= 5000 ? 'var(--blue)' : bitrate >= 3000 ? 'var(--cyan)' : 'var(--amber)';
+        document.getElementById('bitrateValue').style.color = brColor;
+        const brGauge = document.getElementById('gaugeBitrate');
+        brGauge.querySelector('.gauge-bar').style.width = Math.min((bitrate / 6000) * 100, 100) + '%';
+        brGauge.querySelector('.gauge-bar').style.background = brColor;
+
+        // CDN Regions
+        const regions = state.regions || {};
+        const regionKeys = Object.keys(regions);
+        const upCount = regionKeys.filter(k => regions[k].up).length;
+        const total = regionKeys.length || 4;
+        const cdnVal = document.getElementById('cdnValue');
+        cdnVal.textContent = `${upCount}/${total}`;
+        const cdnColor = upCount === total ? 'var(--green)' : upCount >= total - 1 ? 'var(--amber)' : 'var(--red)';
+        cdnVal.style.color = cdnColor;
+        const cdnGauge = document.getElementById('gaugeCDN');
+        cdnGauge.querySelector('.gauge-bar').style.width = (upCount / total * 100) + '%';
+        cdnGauge.querySelector('.gauge-bar').style.background = cdnColor;
+
+        // System badge
+        const health = computeHealth(state);
+        const sysBadge = document.getElementById('systemBadge');
+        if (health === 'healthy') {
+            sysBadge.textContent = 'NOMINAL';
+            sysBadge.className = 'card-badge badge-green';
+        } else if (health === 'degraded') {
+            sysBadge.textContent = 'DEGRADED';
+            sysBadge.className = 'card-badge badge-amber';
+        } else {
+            sysBadge.textContent = 'CRITICAL';
+            sysBadge.className = 'card-badge badge-red';
+        }
+
+        // CDN Grid
+        updateCDNGrid(regions);
+    }
+
+    // ================================================================
+    // CDN GRID
+    // ================================================================
+    function updateCDNGrid(regions) {
+        const grid = document.getElementById('cdnGrid');
+        const regionOrder = ['us-east', 'us-west', 'eu-west', 'ap-south'];
+        let html = '';
+
+        for (const key of regionOrder) {
+            const r = regions[key] || { up: true, latency_ms: 0 };
+            const isUp = r.up;
+            const latency = r.latency_ms || 0;
+            let latencyClass = 'normal';
+            if (latency > 500) latencyClass = 'critical';
+            else if (latency > 200) latencyClass = 'warning';
+
+            html += `
+                <div class="cdn-region">
+                    <div class="cdn-left">
+                        <div class="cdn-status-dot ${isUp ? 'up' : 'down'}"></div>
+                        <span class="cdn-name">${REGION_DISPLAY[key] || key}</span>
+                    </div>
+                    <span class="cdn-latency ${isUp ? latencyClass : 'critical'}">${isUp ? latency + 'ms' : 'DOWN'}</span>
+                </div>
+            `;
+        }
+
+        grid.innerHTML = html;
+    }
+
+    // ================================================================
+    // INCIDENT FEED
+    // ================================================================
+    function updateIncidentFeed(incidents) {
+        const feed = document.getElementById('incidentFeed');
+        const countBadge = document.getElementById('incidentCount');
+
+        countBadge.textContent = `${incidents.length} incident${incidents.length !== 1 ? 's' : ''}`;
+
+        if (incidents.length === 0) {
+            feed.innerHTML = `
+                <div class="incident-empty">
+                    <div class="incident-empty-icon">🛡️</div>
+                    <p>No incidents recorded. Pipeline is clean.</p>
+                </div>
+            `;
+            return;
+        }
+
+        let html = '';
+        for (const inc of incidents) {
+            const isEscalation = inc.tool_call && inc.tool_call.name === 'escalate_to_human';
+            const isError = inc.tool_result && inc.tool_result.status === 'error';
+            const isResolved = !isEscalation && !isError;
+
+            const iconClass = isEscalation ? 'escalated' : isError ? 'error' : 'resolved';
+            const icon = isEscalation ? '🙋' : isError ? '❌' : '✅';
+
+            const toolName = inc.tool_call ? inc.tool_call.name : 'none';
+            const toolArgs = inc.tool_call && inc.tool_call.args
+                ? Object.entries(inc.tool_call.args).map(([k, v]) => `${k}=${v}`).join(', ')
+                : '';
+            const toolDisplay = toolArgs ? `${toolName}(${toolArgs})` : toolName;
+
+            const time = inc.timestamp
+                ? new Date(inc.timestamp).toLocaleTimeString('en-US', { hour12: false })
+                : '??:??:??';
+
+            html += `
+                <div class="incident-item">
+                    <div class="incident-icon ${iconClass}">${icon}</div>
+                    <div class="incident-body">
+                        <div class="incident-header-row">
+                            <span class="incident-title">${inc.alertname || 'Unknown Alert'}</span>
+                            <span class="incident-time">${time}</span>
+                        </div>
+                        <div class="incident-diagnosis">${inc.diagnosis || 'No diagnosis available.'}</div>
+                        <span class="incident-action">⚙️ ${toolDisplay}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        feed.innerHTML = html;
+    }
+
+    // ================================================================
+    // AGENT STATUS
+    // ================================================================
+    function updateAgentStatus(health) {
+        const mode = document.getElementById('agentMode');
+        const desc = document.getElementById('agentDesc');
+
+        if (health === 'critical') {
+            mode.textContent = 'REMEDIATING';
+            mode.className = 'agent-mode card-badge badge-red';
+            desc.textContent = 'Executing remediation playbook…';
+        } else if (health === 'degraded') {
+            mode.textContent = 'INVESTIGATING';
+            mode.className = 'agent-mode card-badge badge-amber';
+            desc.textContent = 'Analyzing anomalous metrics…';
+        } else {
+            mode.textContent = 'WATCHING';
+            mode.className = 'agent-mode card-badge badge-green';
+            desc.textContent = 'Monitoring pipeline for anomalies';
+        }
+    }
+
+    // ================================================================
+    // POLLING
+    // ================================================================
+    async function fetchStatus() {
+        try {
+            const res = await fetch(`${API_BASE}/api/status`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+
+            if (!isConnected) {
+                isConnected = true;
+                showToast('ok', 'Connection restored');
+            }
+
+            const state = data.state || {};
+            const stats = data.stats || {};
+            const health = computeHealth(state);
+
+            updateHealthBanner(health, stats);
+            updateGauges(state);
+            updateAgentStatus(health);
+
+        } catch (err) {
+            if (isConnected) {
+                isConnected = false;
+                showToast('error', 'Agent connection lost — retrying…');
+            }
+        }
+    }
+
+    async function fetchIncidents() {
+        try {
+            const res = await fetch(`${API_BASE}/api/incidents`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            updateIncidentFeed(data.incidents || []);
+        } catch (err) {
+            // Silently retry next cycle
+        }
+    }
+
+    function startPolling() {
+        // Immediate first fetch
+        fetchStatus();
+        fetchIncidents();
+
+        // Poll every 2 seconds
+        setInterval(() => {
+            fetchStatus();
+            fetchIncidents();
+        }, 2000);
+    }
+
+    // ================================================================
+    // INIT
+    // ================================================================
+    document.addEventListener('DOMContentLoaded', startPolling);
+</script>
+
+</body>
+</html>

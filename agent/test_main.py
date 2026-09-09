@@ -84,7 +84,72 @@ def test_crash_resilience():
     finally:
         main.execute_tool = original_execute_tool
 
+def test_dashboard_endpoints():
+    # Test GET /
+    res = client.get("/")
+    assert res.status_code == 200
+    assert "text/html" in res.headers.get("content-type", "")
+
+    # Test GET /api/status
+    res = client.get("/api/status")
+    assert res.status_code == 200
+    data = res.json()
+    assert "state" in data
+    assert "stats" in data
+    assert "resolved" in data["stats"]
+    assert "escalated" in data["stats"]
+
+    # Test GET /api/incidents
+    res = client.get("/api/incidents")
+    assert res.status_code == 200
+    incidents_data = res.json()
+    assert "incidents" in incidents_data
+    assert isinstance(incidents_data["incidents"], list)
+    
+    if len(incidents_data["incidents"]) > 0:
+        first_id = incidents_data["incidents"][0].get("incident_id")
+        if first_id:
+            res_single = client.get(f"/api/incidents/{first_id}")
+            assert res_single.status_code == 200
+            assert res_single.json().get("incident_id") == first_id
+
+    print("Dashboard and API endpoints verified successfully.")
+
+def test_escalation_and_scaling_pipeline():
+    # Reset state
+    with open("../state.json", "w") as f:
+        json.dump({"encoder_alive": True, "regions": {"ap-south": {"up": True, "latency_ms": 250}}}, f)
+
+    payload = {
+        "alerts": [
+            {"status": "firing", "labels": {"alertname": "CDNHighLatency", "region": "ap-south"}},
+            {"status": "firing", "labels": {"alertname": "UnknownHardwareGlitch"}}
+        ]
+    }
+    
+    response = client.post("/grafana/webhook", json=payload)
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["processed_count"] == 2
+    
+    # 1st alert: CDNHighLatency -> scale_cdn_capacity
+    assert data["details"][0]["alertname"] == "CDNHighLatency"
+    assert data["details"][0]["status"] == "processed"
+    
+    # 2nd alert: UnknownHardwareGlitch -> escalate_to_human
+    assert data["details"][1]["alertname"] == "UnknownHardwareGlitch"
+    assert data["details"][1]["status"] == "processed"
+    
+    # Check state.json to verify latency was reduced
+    with open("../state.json", "r") as f:
+        state = json.load(f)
+        assert state["regions"]["ap-south"]["latency_ms"] < 250
+
+    print("Escalation and capacity scaling pipeline verified.")
+
 if __name__ == "__main__":
     test_full_pipeline()
     test_crash_resilience()
+    test_dashboard_endpoints()
+    test_escalation_and_scaling_pipeline()
     print("\nALL TESTS PASSED.")
